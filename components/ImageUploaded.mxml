@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Canvas clipContent="false" xmlns:mx="http://www.adobe.com/2006/mxml" xmlns:view="components.view.*" width="400" height="400" horizontalCenter="0" backgroundColor="#FFFFFF" backgroundAlpha="1.0">
+	<mx:Script>
+		<![CDATA[
+			import mx.controls.Alert;
+			import mx.core.Application;
+			import mx.core.UIComponent;
+			import mx.utils.ObjectUtil;
+			
+			private var selectionRect:Rectangle;
+			private var clickPoint:Point;
+			public var myBitmap:Bitmap;
+			
+			public function creationComplete_handler():void{
+				stage.addEventListener(MouseEvent.MOUSE_DOWN, startSelectionDrawing_handler);
+				stage.addEventListener(MouseEvent.MOUSE_UP, stopSelectionDrawing_handler);
+			}
+
+			public function inactivateStartSelection():void{
+				stage.removeEventListener(MouseEvent.MOUSE_DOWN, startSelectionDrawing_handler);
+			}
+			
+			private function startSelectionDrawing_handler(evt:MouseEvent):void{
+				selectionRect=new Rectangle();
+				selectionRect.x=mouseX;
+				selectionRect.y=mouseY;
+				selectionRect.width=1;
+				selectionRect.height=1;
+				addEventListener(Event.ENTER_FRAME,updateSelection_handler);
+			}
+			private function stopSelectionDrawing_handler(evt:MouseEvent):void{
+				removeEventListener(Event.ENTER_FRAME,updateSelection_handler);
+				mySelectionRect.clear();
+				selectionRect=null;
+			}
+			
+			private function updateSelection_handler(evt:Event):void{
+				selectionRect.width=mouseX-selectionRect.x;
+				selectionRect.height=mouseY-selectionRect.y;
+				mySelectionRect.rect=selectionRect;
+				//create a rectangle
+				var cropRect:Rectangle = mySelectionRect.rect;
+				//create new bitmap data - because BitmapData's width/height are read only
+				var bmpData:BitmapData = new BitmapData(cropRect.width, cropRect.height, false);
+				bmpData.copyPixels(mx.core.Application.application.bd, new Rectangle(mySelectionRect.rect.x - (selectionRect.x * 0.30), mySelectionRect.rect.y - (selectionRect.y * 0.25), mySelectionRect.rect.width, mySelectionRect.rect.height), new Point(0, 0), null, null, false);
+				//assign the cropped bitmap data to the image.
+				myBitmap = new Bitmap(bmpData);
+				mx.core.Application.application.imgOfSig.source = myBitmap;
+				mx.core.Application.application.btnAccept.enabled = true;
+			}
+		]]>
+	</mx:Script>
+	<mx:Image id="uploadedImage" height="350" horizontalAlign="center" horizontalCenter="0"
+			  source="{null}" verticalAlign="top" verticalCenter="-8"/>
+	
+	<view:SelectionRectangle id="mySelectionRect" lineThickness="1" x="0" y="0"/>
+</mx:Canvas>

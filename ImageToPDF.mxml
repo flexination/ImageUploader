@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Application xmlns:mx="http://www.adobe.com/2006/mxml"
+				xmlns:comps="components.*"
+				applicationComplete="getDomain()" backgroundColor="#000000" errorColor="#CC0000"
+				horizontalAlign="center" layout="absolute" verticalAlign="middle"
+				viewSourceURL="srcview/index.html">
+	
+	<mx:RemoteObject id="roSign"
+		 destination="ColdFusion" 
+		 endpoint="{_remoteGateway}"
+		 source="{_cfcPath}"
+		 fault="ROFaultHandler(event)"
+		 showBusyCursor="true">
+		<mx:method name="getVisitorIP" result="IPHandler(event.result)"/>
+		<mx:method name="doUpload" result="doUploadHandler(event.result)"/>
+		<mx:method name="convertToPDF" result="convertToPDFHandler(event.result)"/>
+		<mx:method name="convertToTIF" result="convertToTIFHandler(event.result)"/>
+		<mx:method name="zipUp" result="zipUpHandler(event.result)"/>
+		<mx:method name="cleanUp" result="cleanUpHandler(event.result)"/>
+	</mx:RemoteObject>
+	
+	<mx:Script>
+		<![CDATA[
+			import flash.net.FileReference;
+			
+			import info.flexination.actionscripts.PNGEnc;
+			
+			import mx.controls.Alert;
+			import mx.core.Application;
+			import mx.effects.Effect;
+			import mx.events.FlexMouseEvent;
+			import mx.managers.CursorManager;
+			import mx.rpc.events.FaultEvent;
+			import mx.rpc.events.ResultEvent;
+			import mx.utils.ObjectUtil;
+			import mx.utils.URLUtil;
+			
+			private var domain:String = "";
+			private var imageFileRef:FileReference = new FileReference();
+			private var filesize: Number;
+			private var sIP:String;
+			private var UIFileName:String;
+			private var drawColor:uint;
+			private var moveCount:int = 0;
+			private var myTimer:Timer = new Timer(1000, 4);
+			private var myTimer2:Timer = new Timer(3000, 1);
+			private var myLoader:Loader;
+			public var bd:BitmapData;
+			
+			[Bindable] public var filename: String = "ImageToPDF.png";
+			[Bindable] private var _remoteGateway:String = "http://localhost/flex2gateway/";
+			[Bindable] private var _cfcPath:String = "flextraining.ImageToPDF.info.flexination.cfcs.converter";
+			
+			private function getDomain(): void {
+				domain = URLUtil.getServerName(Application.application.loaderInfo.url);
+				_remoteGateway = "http://" + domain + "/flex2gateway/";
+				//Alert.show(_remoteGateway);
+				if (domain == "labs.webhtml5.info") {
+					_cfcPath = "ImageToPDF.info.flexination.cfcs.converter";
+				}
+				if (domain == "labs.insideflex.com") {
+					_cfcPath = "flextraining.ImageToPDF.info.flexination.cfcs.converter";
+				}
+				//Alert.show(_cfcPath);
+				getIP();
+				loadImage();
+			}
+			
+			private function getIP():void {
+				roSign.getVisitorIP();
+			}
+			
+			private function fileBrowse(): void {
+				imageFileRef.addEventListener(Event.SELECT, onSelect);
+				imageFileRef.browse(); 
+			}
+			
+			private function fileUpload(): void {
+				if (filename != "") {
+					if (filesize < 512000) {
+						if (filename.substr((filename.length - 3), 3)=="jpg" || filename.substr((filename.length - 3), 3)=="JPG" || filename.substr((filename.length - 3), 3)=="png" || filename.substr((filename.length - 3), 3)=="PNG" || filename.substr((filename.length - 3), 3)=="gif" || filename.substr((filename.length - 3), 3)=="GIF") {
+							//Alert.show(filename.substr((filename.length - 3), 3));
+							btnAccept.enabled = true;
+							var imgURLVars:URLVariables = new URLVariables();
+							imgURLVars.accept = "image/*";
+							var servletTarget:URLRequest = new URLRequest("http://" + domain + "/flextraining/upload/upload4Flex.cfm");
+							servletTarget.data = imgURLVars;
+							servletTarget.method = URLRequestMethod.POST;
+							servletTarget.contentType = "multipart/form-data";
+							imageFileRef.upload(servletTarget);
+							imageFileRef.addEventListener(ProgressEvent.PROGRESS, progressHandler);
+							imageFileRef.addEventListener(HTTPStatusEvent.HTTP_STATUS, httpStatusHandler);
+							imageFileRef.addEventListener(IOErrorEvent.IO_ERROR, ioErrorHandler);
+							imageFileRef.addEventListener(Event.COMPLETE, uploadComplete);
+							CursorManager.setBusyCursor();
+						} else {
+							Alert.show("The file, whose file extension is " + filename.substr((filename.length - 3), 3) + " is not allowed - only JPGs, PNGs, and GIFs are allowed.");
+						}
+					} else {
+						Alert.show("The file, whose size is " + Math.round(Number(filesize/1024)) + " KB exceeded the maximum filesize allowed by " + Math.round(Number((filesize - 512000)/1024)) + " KB.\n\nPlease verify that the file you want to upload is less than 500 KB.");
+					}
+				} else {
+					Alert.show("You must select a file to upload.");
+				}
+			}
+			
+			private function onSelect(event:Event): void {
+				filename = imageFileRef.name;
+				filesize = imageFileRef.size;
+				imageName.text = filename;
+				//Alert.show(filename.toString());
+			}
+			
+			private function progressHandler(event:ProgressEvent): void {
+				uploadStatus.text = "";
+				uploadStatus.text = "bytes uploaded: " + event.bytesLoaded + " out of " + event.bytesTotal; 
+			}
+			
+			private function ioErrorHandler(event:IOErrorEvent): void {
+				Alert.show(ObjectUtil.toString(event));
+			}
+			
+			private function httpStatusHandler(event:HTTPStatusEvent): void {
+				Alert.show(ObjectUtil.toString(event));
+			}
+			
+			private function uploadComplete(event:Event): void {
+				//Alert.show(ObjectUtil.toString(event));
+				loadImage();
+			}
+			
+			private function loadImage(): void {
+				myLoader = new Loader();
+				myLoader.contentLoaderInfo.addEventListener(ProgressEvent.PROGRESS, onProgressStatus);
+				myLoader.contentLoaderInfo.addEventListener(Event.COMPLETE, onComplete);
+				
+				var fileRequest:URLRequest = new URLRequest("http://" + domain + "/prototypes/files/" + filename);
+				myLoader.load(fileRequest);
+			}
+			
+			private function onProgressStatus(e:ProgressEvent): void {   
+				uploadStatus.text = "";
+				uploadStatus.text = "bytes downloaded: " + e.bytesLoaded + " out of " + e.bytesTotal; 
+			}
+			
+			private function onComplete(e:Event): void {     
+				bd = e.target.loader.content.bitmapData;
+				myComp.uploadedImage.source = "http://" + domain + "/prototypes/files/" + filename;
+				CursorManager.removeBusyCursor();
+				myComp.creationComplete_handler();
+			}
+			
+			public function doConversion(): void {
+				//Alert.show(ObjectUtil.toString(e.target.loader.content.bitmapData));
+				btnView.enabled = true;
+				lnkGetZip.enabled = false;
+				var bmapdata:BitmapData = new BitmapData(myComp.myBitmap.width, myComp.myBitmap.height, true);
+				bmapdata.draw(myComp.myBitmap);
+				var ba:ByteArray = PNGEnc.encode(bmapdata);
+				roSign.doUpload(ba,sIP);
+			}
+			
+			private function doView():void {
+				myTimer.addEventListener(TimerEvent.TIMER, startTimer);
+				myTimer.addEventListener(TimerEvent.TIMER_COMPLETE, stopTimer);
+				myTimer.start(); 
+				var url:String = "converted_pngs/converted_" + UIFileName + ".png";
+				var u:URLRequest = new URLRequest(url);
+				navigateToURL(u,"_blank");
+			}    
+			
+			private function getZipArchive():void {
+				var url:String = "multipleformats_zips/converted_" + UIFileName + ".zip";
+				var u:URLRequest = new URLRequest(url);
+				navigateToURL(u,"_blank");
+			}
+			
+			private function IPHandler(result:Object):void {
+				sIP = result.toString();
+				lblIP.text = "IP: " + sIP
+			}
+			
+			private function doUploadHandler(result:Object):void {
+				UIFileName = result.toString();
+				// call CFC's convertToPDF method, passing in the UIFileName
+				roSign.convertToPDF(UIFileName);
+				btnAccept.enabled = false;
+				btnView.enabled = true;
+				imgOfSig.source = "converted_pngs/converted_" + UIFileName + ".png";
+			}
+			
+			private function convertToPDFHandler(result:Object):void {
+				var blnSuccess:Boolean = result;
+				if (blnSuccess) {
+					roSign.convertToTIF(UIFileName);
+				} else {
+					Alert.show(ObjectUtil.toString(result));
+				}
+			}
+			
+			private function convertToTIFHandler(result:Object):void {
+				var blnSuccess:Boolean = result;
+				if (blnSuccess) {
+					roSign.zipUp(UIFileName);
+				} else {
+					Alert.show(ObjectUtil.toString(result));
+				}
+			}
+
+			private function zipUpHandler(result:Object):void {
+				var blnZipSuccess:Boolean = result;
+				if (blnZipSuccess) {
+					roSign.cleanUp(UIFileName);
+				} else {
+					Alert.show(ObjectUtil.toString(result));
+				}
+			}
+			
+			private function cleanUpHandler(result:Object):void {
+				var blnDeleteSuccess:Boolean = result;
+				if (blnDeleteSuccess) {
+					lnkGetZip.enabled = true;
+				} else {
+					Alert.show(ObjectUtil.toString(result));
+				}
+			}
+			
+			private function ROFaultHandler(event:FaultEvent):void {
+				Alert.show(ObjectUtil.toString(event.fault));
+			}
+			
+			private function ioErrHandler(event:IOErrorEvent):void {
+				trace("ioErrorHandler: " + event);
+				Alert.show("ioErrorHandler: " + ObjectUtil.toString(event));
+			}
+			
+			private function startTimer(event:TimerEvent):void {
+				txtProgress.text = 'Opening your image as a PNG...';
+			}
+			
+			private function stopTimer(event:TimerEvent):void {
+				myTimer.removeEventListener(TimerEvent.TIMER, startTimer);
+				myTimer.removeEventListener(TimerEvent.TIMER_COMPLETE, stopTimer);
+				txtProgress.text = 'Your PNG is opened in another window...';
+				myTimer2.addEventListener(TimerEvent.TIMER, clearProgress);
+				myTimer2.start();
+			}
+			
+			private function clearProgress(event:TimerEvent):void {
+				txtProgress.text = '';
+				myTimer2.removeEventListener(TimerEvent.TIMER, clearProgress);
+			}
+		]]>
+	</mx:Script>
+	
+	<mx:Style>
+		@namespace mx "library://ns.adobe.com/flex/mx";
+		mx|ToolTip { font-family: "Verdanna"; font-size: 12; font-weight: "normal"; background-color: "0x7B68EE"; color: "0xFFFFFF"; }    
+	</mx:Style>
+	
+	<mx:Panel id="pnlSignature" top="0" maxWidth="1024" color="#FFFFFF" horizontalCenter="0" horizontalAlign="center" verticalAlign="top"
+			  title="Convert your image upload to a PDF">
+		
+		<mx:Form id="frmImgUpload" width="98%" height="0" horizontalCenter="0" visible="false" verticalScrollPolicy="off">    
+			<mx:FormItem width="461" label="File to Upload" direction="horizontal" required="true" color="#000000">        
+				<mx:TextInput id="imageName"
+							  width="282" color="#000000" />
+				<mx:Button id="browseButton"
+						   label="Browse" click="fileBrowse(); myComp.inactivateStartSelection();" color="#000000" />
+			</mx:FormItem>
+			<mx:FormItem direction="horizontal">
+				<mx:Button id="uploadButton"
+						   label="upload" click="fileUpload(); myComp.inactivateStartSelection();" color="#000000" />
+				<mx:Label id="uploadStatus" 
+						  color="#000000"
+						  text="Select a file to upload." />
+			</mx:FormItem>
+		</mx:Form>
+		
+		<mx:Label text="Drag across the image to select a portion; Rollout to upload another image." color="#FF6600"/>
+		<comps:ImageUploaded id="myComp" height="350" rollOver="{myComp.creationComplete_handler()}" rollOut="{frmImgUpload.visible = true; frmImgUpload.height = 72; myComp.inactivateStartSelection()}" />
+		
+		<mx:ControlBar>
+			<mx:Button id="btnAccept" label="Capture" click="doConversion(); myComp.inactivateStartSelection();" enabled="false" toolTip="{(btnAccept.enabled)?'Click to capture your image as a PNG.':''}"/>
+			<mx:Button id="btnView" label="View" click="doView(); myComp.inactivateStartSelection();" enabled="false" toolTip="{(btnView.enabled)?'Click to open your image, as a PNG, and to create a zip archive (includes the PNG, the SVG, the TIF, and the PDF of the image selection you just uploaded).':''}"/>
+			<mx:Label id="lblIP" text="IP:" color="#FF6600" />
+			<mx:Image id="imgOfSig"  click="myComp.inactivateStartSelection(); {imgOfSig.height=0}" toolTip="Click to hide." bottom="-42"/>
+		</mx:ControlBar>
+		
+	</mx:Panel>
+
+	<mx:VBox bottom="0" width="100%" height="300" horizontalAlign="center" horizontalCenter="0"
+		verticalAlign="bottom">
+		<mx:LinkButton id="lnkGetZip" label="{(lnkGetZip.enabled)?'Click to download your image upload (a zip archive)':''}" click="getZipArchive(); myComp.inactivateStartSelection();" toolTip="Click to download your very own converted image in a convenient, zip archive (includes a PNG, a SVG, a TIF, and a PDF of the image selection you just uploaded)." enabled="false" color="#FFFFFF"/>
+		<mx:Text id="txtProgress" width="438" height="30" color="green" fontFamily="Verdana" fontSize="14" fontStyle="italic" horizontalCenter="0" textAlign="center"/>
+	</mx:VBox>
+	
+</mx:Application>
